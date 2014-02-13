@@ -6,14 +6,18 @@
 <body ng-controller="MainCtrl as main">
 	<button ng-click="main.getLists()">load lists</button>
 	<button ng-click="main.getFriends()">load friends</button>
+	<button ng-click="main.assoc()">assoc</button>
 
-	<ul>
-		<li ng-repeat="list in lists" ng-click="main.getMembers(list.id)">{{list.name}}</li>
-	</ul>
-
-	<ul>
-		<li ng-repeat="friend in friends">{{friend.name}}</li>
-	</ul>
+	<table>
+		<tr>
+			<td></td>
+			<td ng-repeat="list in lists">{{ list.name }}</td>
+		</tr>
+		<tr ng-repeat="friend in friends">
+			<td>{{ friend.name }}</td>
+			<td ng-repeat="list in lists">{{ main.listHasMember(list, friend) ? 'X' : '' }}</td>
+		</tr>
+	</table>
 
 	<script type="text/javascript" src="vendor/angular/angular.js"></script>
 	<script type="text/javascript" src="js/main.js"></script>
