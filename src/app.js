@@ -1,3 +1,4 @@
+var fs = require('fs');
 var path = require('path');
 
 var Q = require('q');
@@ -7,6 +8,7 @@ var twitter = require('twitter');
 var app = express();
 
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
+app.use(express.bodyParser());
 
 var twit = new twitter({
     consumer_key: 'BU1EZhqBoPS6raFt9WCHw',
@@ -15,10 +17,28 @@ var twit = new twitter({
     access_token_secret: 'XXfTE9GGpYZ0Wt35VzlbelDZvSmvibVpJUoYLQmEclRbL'
 });
 
-var getFriendsList = function () {
+var cacheDir = path.join(__dirname, '..', 'data');
+
+var cache = function (type, id) {
+    if (id !== undefined) {
+        return path.join(cacheDir, type + '-' + id) + '.json';
+    } else {
+        return path.join(cacheDir, type) + '.json';
+    }
+};
+
+var getFriendsList = function (cursor) {
     var defer = Q.defer();
-    twit.get('/friends/list.json', function (data) {
-        defer.resolve(data);
+    cursor = cursor || -1;
+    twit.get('/friends/list.json', {cursor: cursor}, function (data) {
+        console.log(data);
+        if (data.next_cursor) {
+            getFriendsList(data.next_cursor).then(function (users) {
+                defer.resolve(data.users.concat(users));
+            });
+        } else {
+            defer.resolve(data.users);
+        }
     });
     return defer.promise;
 };
@@ -34,25 +54,56 @@ var getListsList = function () {
 var getListMembers = function (id) {
     var defer = Q.defer();
     twit.get('/lists/members.json', {list_id: id}, function (data) {
+        console.log(id);
         defer.resolve(data);
     });
     return defer.promise;
 };
 
+var doCache = function (func, type, id) {
+    var defer = Q.defer();
+    fs.exists(cache(type, id), function (exists) {
+        if (exists) {
+            fs.readFile(cache(type, id), function (err, data) {
+                defer.resolve(JSON.parse(data));
+            });
+        } else {
+            func().then(function (data) {
+                fs.writeFile(cache(type, id), JSON.stringify(data), function (err, res) {
+                    defer.resolve(data);
+                });
+            });
+        }
+    });
+    return defer.promise;
+};
+
+var getFriendsListCache = function () {
+    return doCache(getFriendsList, 'friends');
+};
+
+var getListsListCache = function () {
+    return doCache(getListsList, 'lists');
+};
+
+var getListMembersCache = function (id) {
+    return doCache(function () { return getListMembers(id); }, 'members', id);
+};
+
 app.get('/lists', function (req, res) {
-    getListsList().then(function (data) {
+    getListsListCache().then(function (data) {
         res.json(data);
     });
 });
 
 app.get('/friends', function (req, res) {
-    getFriendsList().then(function (data) {
+    getFriendsListCache().then(function (data) {
         res.json(data);
     });
 });
 
 app.get('/members/:id', function (req, res) {
-    getListMembers(req.params.id).then(function (data) {
+    getListMembersCache(req.params.id).then(function (data) {
         res.json(data);
     });
 });
