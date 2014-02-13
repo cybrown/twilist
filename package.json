@@ -1,0 +1,16 @@
+{
+  "name": "twilist",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Cy Brown",
+  "license": "ISC",
+  "dependencies": {
+    "express": "~3.4.8",
+    "twitter": "~0.2.5",
+    "q": "~1.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html ng-app="twilist">
+<head>
+	<title></title>
+</head>
+<body ng-controller="MainCtrl as main">
+	<button ng-click="main.getLists()">load lists</button>
+	<button ng-click="main.getFriends()">load friends</button>
+
+	<ul>
+		<li ng-repeat="list in lists" ng-click="main.getMembers(list.id)">{{list.name}}</li>
+	</ul>
+
+	<ul>
+		<li ng-repeat="friend in friends">{{friend.name}}</li>
+	</ul>
+
+	<script type="text/javascript" src="vendor/angular/angular.js"></script>
+	<script type="text/javascript" src="js/main.js"></script>
+</body>
+</html>
