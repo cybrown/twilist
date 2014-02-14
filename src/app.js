@@ -10,12 +10,7 @@ var app = express();
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
 app.use(express.bodyParser());
 
-var twit = new twitter({
-    consumer_key: 'BU1EZhqBoPS6raFt9WCHw',
-    consumer_secret: '9648Fnaxr6BiVc7btamcRayMn9cVnmFgqunujar2Tc',
-    access_token_key: '233189798-eA35qHp0gCwAgUfbEtyT2HTcY2nRjPmtyP6TYZZv',
-    access_token_secret: 'XXfTE9GGpYZ0Wt35VzlbelDZvSmvibVpJUoYLQmEclRbL'
-});
+var twit = new twitter(require('../twitter-tokens.json'));
 
 var cacheDir = path.join(__dirname, '..', 'data');
 
