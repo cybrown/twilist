@@ -15,7 +15,10 @@
 		</tr>
 		<tr ng-repeat="friend in friends">
 			<td>{{ friend.name }}</td>
-			<td ng-repeat="list in lists">{{ main.listHasMember(list, friend) ? 'X' : '' }}</td>
+			<td ng-repeat="list in lists">
+				<button add data-user-id="{{friend.id}}" data-list-id="{{list.id}}" ng-if="!main.listHasMember(list, friend)">ADD</button>
+				<span ng-if="main.listHasMember(list, friend)">X</span>
+			</td>
 		</tr>
 	</table>
 

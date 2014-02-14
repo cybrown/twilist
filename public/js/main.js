@@ -30,7 +30,7 @@ MainCtrl.prototype.getFriends = function () {
 MainCtrl.prototype.getMembers = function (id) {
 	var _this = this;
 	return this.$http.get('/members/' + id).then(function (data) {
-		return data.data.users;
+		return data.data;
 	});
 };
 
@@ -50,5 +50,17 @@ MainCtrl.prototype.assoc = function () {
 MainCtrl.prototype.listHasMember = function (list, member) {
 	return list.members.indexOf(member) !== -1;
 };
+
+MainCtrl.prototype.addUserToList = function (listId, userId) {
+	return this.$http.post('/members/' + listId + '/add', {userId: userId});
+};
+
+twilist.directive('add', function () {
+	return function (scope, elem, attrs) {
+		elem.bind('click', function (event) {
+			scope.main.addUserToList(attrs.listId, attrs.userId);
+		});
+	};
+});
 
 twilist.controller('MainCtrl', MainCtrl);

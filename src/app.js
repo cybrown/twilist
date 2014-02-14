@@ -46,11 +46,19 @@ var getListsList = function () {
     return defer.promise;
 };
 
-var getListMembers = function (id) {
+var getListMembers = function (id, cursor) {
     var defer = Q.defer();
-    twit.get('/lists/members.json', {list_id: id}, function (data) {
+    cursor = cursor || -1;
+    twit.get('/lists/members.json', {list_id: id, cursor: cursor}, function (data) {
         console.log(id);
-        defer.resolve(data);
+        console.log(data.next_cursor);
+        if (data.next_cursor) {
+            getListMembers(id, data.next_cursor).then(function (users) {
+                defer.resolve(data.users.concat(users));
+            });
+        } else {
+            defer.resolve(data.users);
+        }
     });
     return defer.promise;
 };
@@ -85,6 +93,15 @@ var getListMembersCache = function (id) {
     return doCache(function () { return getListMembers(id); }, 'members', id);
 };
 
+var addUserToList = function (userId, listId) {
+    var defer = Q.defer();
+    twit.post('/lists/members/create.json', {list_id: listId, user_id: userId}, function () {
+        console.log(arguments);
+        defer.resolve(null);
+    });
+    return defer.promise;
+};
+
 app.get('/lists', function (req, res) {
     getListsListCache().then(function (data) {
         res.json(data);
@@ -100,6 +117,12 @@ app.get('/friends', function (req, res) {
 app.get('/members/:id', function (req, res) {
     getListMembersCache(req.params.id).then(function (data) {
         res.json(data);
+    });
+});
+
+app.post('/members/:listId/add', function (req, res) {
+    addUserToList(req.body.userId, req.params.listId).then(function () {
+        res.send('');
     });
 });
 
