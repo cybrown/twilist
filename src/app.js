@@ -1,131 +1,149 @@
+'use strict';
+
 var fs = require('fs');
 var path = require('path');
 
+var Plugme = require('plugme').Plugme;
 var Q = require('q');
 var express = require('express');
 var twitter = require('twitter');
+var TwitterAPI = require('./twitterapi');
+var List = require('./entity/list');
+var ListRepository = require('./repository/listrepository');
 
-var app = express();
+var plug = new Plugme();
 
-app.use('/', express.static(path.join(__dirname, '..', 'public')));
-app.use(express.bodyParser());
+plug.set('listrepo', function () {
+    return new ListRepository();
+});
 
-var twit = new twitter(require('../twitter-tokens.json'));
+plug.set('cacheDir', path.join(__dirname, '..', 'data'))
 
-var cacheDir = path.join(__dirname, '..', 'data');
+plug.set('twit', new twitter(require('../twitter-tokens.json')))
 
-var cache = function (type, id) {
-    if (id !== undefined) {
-        return path.join(cacheDir, type + '-' + id) + '.json';
-    } else {
-        return path.join(cacheDir, type) + '.json';
-    }
-};
+plug.set('twitapi', ['twit'], function (twit) {
+    return new TwitterAPI(twit);
+});
 
-var getFriendsList = function (cursor) {
-    var defer = Q.defer();
-    cursor = cursor || -1;
-    twit.get('/friends/list.json', {cursor: cursor}, function (data) {
-        console.log(data);
-        if (data.next_cursor) {
-            getFriendsList(data.next_cursor).then(function (users) {
-                defer.resolve(data.users.concat(users));
-            });
+plug.set('cache', ['cacheDir'], function (cacheDir) {
+    return function (type, id) {
+        if (id !== undefined) {
+            return path.join(cacheDir, type + '-' + id) + '.json';
         } else {
-            defer.resolve(data.users);
+            return path.join(cacheDir, type) + '.json';
         }
-    });
-    return defer.promise;
-};
+    };
+});
 
-var getListsList = function () {
-    var defer = Q.defer();
-    twit.get('/lists/ownerships.json', function (data) {
-        defer.resolve(data);
-    });
-    return defer.promise;
-};
-
-var getListMembers = function (id, cursor) {
-    var defer = Q.defer();
-    cursor = cursor || -1;
-    twit.get('/lists/members.json', {list_id: id, cursor: cursor}, function (data) {
-        console.log(id);
-        console.log(data.next_cursor);
-        if (data.next_cursor) {
-            getListMembers(id, data.next_cursor).then(function (users) {
-                defer.resolve(data.users.concat(users));
-            });
-        } else {
-            defer.resolve(data.users);
-        }
-    });
-    return defer.promise;
-};
-
-var doCache = function (func, type, id) {
-    var defer = Q.defer();
-    fs.exists(cache(type, id), function (exists) {
-        if (exists) {
-            fs.readFile(cache(type, id), function (err, data) {
-                defer.resolve(JSON.parse(data));
-            });
-        } else {
-            func().then(function (data) {
-                fs.writeFile(cache(type, id), JSON.stringify(data), function (err, res) {
-                    defer.resolve(data);
+plug.set('doCache', ['cache'], function (cache) {
+    return function (func, type, id) {
+        var defer = Q.defer();
+        fs.exists(cache(type, id), function (exists) {
+            if (exists) {
+                fs.readFile(cache(type, id), function (err, data) {
+                    defer.resolve(JSON.parse(data));
                 });
+            } else {
+                func().then(function (data) {
+                    fs.writeFile(cache(type, id), JSON.stringify(data), function (err, res) {
+                        defer.resolve(data);
+                    });
+                });
+            }
+        });
+        return defer.promise;
+    };
+});
+
+plug.set('getFriendsListCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
+    return function () {
+        return doCache(function () { return twitapi.getFriendsList(); }, 'friends');
+    };
+});
+
+plug.set('getListsOwnershipsCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
+    return function () {
+        return doCache(function () { return twitapi.getListsOwnerships(); }, 'lists');
+    };
+});
+
+plug.set('getListsMembersCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
+    return function () {
+        return doCache(function () { return twitapi.getListsMembers(); }, 'members');
+    };
+});
+
+plug.set('fetchLists', ['twitapi', 'listrepo'], function (twitapi, listrepo) {
+    return function () {
+        twitapi.on('list', function (data) {
+            var list = new List();
+            listrepo.deserialize(list, data, 'id_str');
+            listrepo.save(list);
+        });
+        return twitapi.getListsOwnerships();
+    };
+});
+
+plug.set('app', [
+    'getListsOwnershipsCache',
+    'getFriendsListCache',
+    'getListsMembersCache',
+    'fetchLists',
+    'twitapi',
+    'listrepo'
+], function (
+    getListsOwnershipsCache,
+    getFriendsListCache,
+    getListsMembersCache,
+    fetchLists,
+    twitapi,
+    listrepo
+) {
+    var app = express();
+    app.use('/', express.static(path.join(__dirname, '..', 'public')));
+    app.use(express.bodyParser());
+
+    app.get('/fetch', function (req, res) {
+        fetchLists().then(function () {
+            listrepo.findAll().then(function (lists) {
+                res.json(lists);
             });
-        }
+        }, function (err) {
+            res.send(500);
+        });
     });
-    return defer.promise;
-};
 
-var getFriendsListCache = function () {
-    return doCache(getFriendsList, 'friends');
-};
-
-var getListsListCache = function () {
-    return doCache(getListsList, 'lists');
-};
-
-var getListMembersCache = function (id) {
-    return doCache(function () { return getListMembers(id); }, 'members', id);
-};
-
-var addUserToList = function (userId, listId) {
-    var defer = Q.defer();
-    twit.post('/lists/members/create.json', {list_id: listId, user_id: userId}, function () {
-        console.log(arguments);
-        defer.resolve(null);
+    app.get('/lists', function (req, res) {
+        listrepo.findAll().then(function (lists) {
+            res.json(lists);
+        });
     });
-    return defer.promise;
-};
 
-app.get('/lists', function (req, res) {
-    getListsListCache().then(function (data) {
-        res.json(data);
+    app.get('/friends', function (req, res) {
+        getFriendsListCache().then(function (data) {
+            res.json(data);
+        });
+    });
+
+    app.get('/members/:id', function (req, res) {
+        getListsMembersCache(req.params.id).then(function (data) {
+            res.json(data);
+        });
+    });
+
+    app.post('/members/:listId/add', function (req, res) {
+        twitapi.postListsMembersCreate(req.body.userId, req.params.listId).then(function () {
+            res.send('');
+        });
+    });
+
+    return app;
+});
+
+plug.set('start', ['app'], function (app) {
+    app.listen(3000, function () {
+        console.log('App listening...');
     });
 });
 
-app.get('/friends', function (req, res) {
-    getFriendsListCache().then(function (data) {
-        res.json(data);
-    });
-});
-
-app.get('/members/:id', function (req, res) {
-    getListMembersCache(req.params.id).then(function (data) {
-        res.json(data);
-    });
-});
-
-app.post('/members/:listId/add', function (req, res) {
-    addUserToList(req.body.userId, req.params.listId).then(function () {
-        res.send('');
-    });
-});
-
-app.listen(3000, function () {
-    console.log('App listening...');
-});
+plug.start(function () {});

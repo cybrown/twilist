@@ -13,6 +13,7 @@
     "twitter": "~0.2.5",
     "q": "~1.0.0",
     "grunt": "~0.4.2",
-    "grunt-nodemon": "~0.2.0"
+    "grunt-nodemon": "~0.2.0",
+    "plugme": "~0.3.0"
   }
 }
