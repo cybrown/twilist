@@ -11,7 +11,7 @@ var MainCtrl = function ($scope, $http) {
 MainCtrl.prototype.getLists = function () {
 	var _this = this;
 	this.$http.get('/lists').then(function (data) {
-		data.data.lists.forEach(function (list) {
+		data.data.forEach(function (list) {
 			_this.$scope.lists[list.id] = list;
 			list.members = [];
 		});
