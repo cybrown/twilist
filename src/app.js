@@ -146,4 +146,8 @@ plug.set('start', ['app'], function (app) {
     });
 });
 
+plug.onError(function (err) {
+    console.log(err);
+});
+
 plug.start(function () {});

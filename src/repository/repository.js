@@ -3,9 +3,13 @@ var Q = require('q');
 
 var Repository = function () {
     this.cache = {};
+    this.driver = null;
 };
 
-//<editor-fold desc="Protected Abstract">
+Repository.prototype.setDriver = function (driver) {
+    this.driver = driver;
+};
+
 Repository.prototype._queryFindById = function (id) {
     throw new Error('Method not defined');
 };
@@ -18,6 +22,7 @@ Repository.prototype._querySave = function (data) {
     throw new Error('Method not defined');
 };
 
+//<editor-fold desc="Protected Abstract">
 Repository.prototype._createNewEntity = function () {
     throw new Error('Method not defined');
 };
@@ -85,6 +90,11 @@ Repository.prototype.findById = function (id) {
     this.__findFromCache(id).then(function (entity) {
         if (!entity) {
             entity = _this._createNewEntity();
+            _this.driver.findBy('_id', id).then(function () {
+
+            }, function (err) {
+
+            })
             _this.deserialize(entity, _this._queryFindById(id));
             _this.__saveInCache(entity);
         }
