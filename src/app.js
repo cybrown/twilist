@@ -7,142 +7,116 @@ var Plugme = require('plugme').Plugme;
 var Q = require('q');
 var express = require('express');
 var twitter = require('twitter');
+var MongoClient = require('mongodb').MongoClient;
+
 var TwitterAPI = require('./twitterapi');
-var List = require('./entity/list');
-var ListRepository = require('./repository/listrepository');
 
 var plug = new Plugme();
 
-plug.set('listrepo', function () {
-    return new ListRepository();
+plug.set('twit', new twitter(require('../twitter-tokens.json')));
+
+plug.set('mongodb', function (done) {
+    MongoClient.connect('mongodb://localhost:27017/twilist', function (err, db) {
+        if (err) {
+            throw err;
+        }
+        done(db);
+    });
 });
-
-plug.set('cacheDir', path.join(__dirname, '..', 'data'))
-
-plug.set('twit', new twitter(require('../twitter-tokens.json')))
 
 plug.set('twitapi', ['twit'], function (twit) {
     return new TwitterAPI(twit);
 });
 
-plug.set('cache', ['cacheDir'], function (cacheDir) {
-    return function (type, id) {
-        if (id !== undefined) {
-            return path.join(cacheDir, type + '-' + id) + '.json';
-        } else {
-            return path.join(cacheDir, type) + '.json';
-        }
-    };
+plug.set('listdb', ['mongodb'], function (mongodb) {
+    return mongodb.collection('lists');
 });
 
-plug.set('doCache', ['cache'], function (cache) {
-    return function (func, type, id) {
-        var defer = Q.defer();
-        fs.exists(cache(type, id), function (exists) {
-            if (exists) {
-                fs.readFile(cache(type, id), function (err, data) {
-                    defer.resolve(JSON.parse(data));
-                });
-            } else {
-                func().then(function (data) {
-                    fs.writeFile(cache(type, id), JSON.stringify(data), function (err, res) {
-                        defer.resolve(data);
-                    });
-                });
+plug.set('userdb', ['mongodb'], function (mongodb) {
+    return mongodb.collection('users');
+});
+
+plug.set('twitFetch', ['twitapi', 'listdb', 'userdb'], function (twitapi, listdb, userdb) {
+    twitapi.on('list', function (list) {
+        var _id = list.id_str;
+        list.user = list.user.id_str;
+        list.created_at = new Date(list.created_at);
+        delete list.id;
+        delete list.id_str;
+
+        listdb.update({_id: _id}, {$set: list}, {w: 1, upsert: true}, function (err) {
+            if (err) {
+                console.log(err);
             }
         });
-        return defer.promise;
-    };
-});
+    });
+    twitapi.on('user', function (user) {
+        console.log('user ok');
+        var _id = user.id_str;
+        user.created_at = new Date(user.created_at);
+        delete user.id;
+        delete user.id_str;
 
-plug.set('getFriendsListCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
-    return function () {
-        return doCache(function () { return twitapi.getFriendsList(); }, 'friends');
-    };
-});
-
-plug.set('getListsOwnershipsCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
-    return function () {
-        return doCache(function () { return twitapi.getListsOwnerships(); }, 'lists');
-    };
-});
-
-plug.set('getListsMembersCache', ['doCache', 'twitapi'], function (doCache, twitapi) {
-    return function () {
-        return doCache(function () { return twitapi.getListsMembers(); }, 'members');
-    };
-});
-
-plug.set('fetchLists', ['twitapi', 'listrepo'], function (twitapi, listrepo) {
-    return function () {
-        twitapi.on('list', function (data) {
-            var list = new List();
-            listrepo.deserialize(list, data, 'id_str');
-            listrepo.save(list);
+        userdb.update({_id: _id}, {$set: user}, {w: 1, upsert: true}, function (err) {
+            if (err) {
+                console.log(err);
+            }
         });
-        return twitapi.getListsOwnerships();
-    };
+    });
+    return null;
 });
 
-plug.set('app', [
-    'getListsOwnershipsCache',
-    'getFriendsListCache',
-    'getListsMembersCache',
-    'fetchLists',
+plug.set('server', [
     'twitapi',
-    'listrepo'
+    'twitFetch'
 ], function (
-    getListsOwnershipsCache,
-    getFriendsListCache,
-    getListsMembersCache,
-    fetchLists,
     twitapi,
-    listrepo
+    twitFetch
 ) {
-    var app = express();
-    app.use('/', express.static(path.join(__dirname, '..', 'public')));
-    app.use(express.bodyParser());
+    var server = express();
+    server.use('/', express.static(path.join(__dirname, '..', 'public')));
+    server.use(express.bodyParser());
 
-    app.get('/fetch', function (req, res) {
-        fetchLists().then(function () {
-            listrepo.findAll().then(function (lists) {
-                res.json(lists);
-            });
-        }, function (err) {
-            res.send(500);
+    server.get('/fetch', function (req, res) {
+        Q.all([/*twitapi.fetchLists(), */twitapi.fetchFriends()]).then(function () {
+            res.send('ok');
+        }).catch(function (err) {
+            res.send(500, err);
         });
     });
 
-    app.get('/lists', function (req, res) {
+    /*
+     server.get('/lists', function (req, res) {
         listrepo.findAll().then(function (lists) {
             res.json(lists);
         });
     });
 
-    app.get('/friends', function (req, res) {
+     server.get('/friends', function (req, res) {
         getFriendsListCache().then(function (data) {
             res.json(data);
         });
     });
 
-    app.get('/members/:id', function (req, res) {
+     server.get('/members/:id', function (req, res) {
         getListsMembersCache(req.params.id).then(function (data) {
             res.json(data);
         });
     });
 
-    app.post('/members/:listId/add', function (req, res) {
+     server.post('/members/:listId/add', function (req, res) {
         twitapi.postListsMembersCreate(req.body.userId, req.params.listId).then(function () {
             res.send('');
         });
     });
+    */
 
-    return app;
+    return server;
 });
 
-plug.set('start', ['app'], function (app) {
-    app.listen(3000, function () {
-        console.log('App listening...');
+plug.set('start', ['server'], function (server) {
+    server.listen(3000, function () {
+        console.log('Server listening...');
     });
 });
 
@@ -150,4 +124,6 @@ plug.onError(function (err) {
     console.log(err);
 });
 
-plug.start(function () {});
+plug.start(function (done) {
+    done();
+});
