@@ -8,57 +8,49 @@ var TwitterAPI = function (twit) {
 };
 TwitterAPI.prototype = Object.create(EventEmitter.prototype);
 
-TwitterAPI.prototype.fetchLists = function () {
-    var defer = Q.defer();
-    var _this = this;
-    this.twit.get('/lists/ownerships.json', function (data) {
-        if (data instanceof Error) {
-            console.log(data);
-            defer.reject(data);
-        } else if (data.statusCode) {
-            console.log(data);
-            defer.reject(createApiError(data.statusCode));
-        } else {
-            data.lists.forEach(function (list) {
-                var user = list.user;
-                _this.emit('list', list);
-                _this.emit('user', user);
-            });
-            defer.resolve();
-        }
-    });
-    return defer.promise;
-};
-
-TwitterAPI.prototype.fetchFriends = function (cursor) {
+TwitterAPI.prototype.fetchFromCursor = function (url, cb, cursor) {
     var defer = Q.defer();
     var _this = this;
     cursor = cursor || -1;
-    this.twit.get('/friends/list.json', {cursor: cursor}, function (data) {
-        console.log('call');
+    this.twit.get(url, {cursor: cursor}, function (data) {
         if (data.statusCode) {
-            console.log('error 1');
             defer.reject(createApiError(data.statusCode));
         } else {
             if (data.next_cursor) {
-                _this.fetchFriends(data.next_cursor).then(function () {
+                _this.fetchFromCursor(url, cb, data.next_cursor).then(function () {
                     defer.resolve();
                 }, function (err) {
                     defer.reject(err);
                 })
             } else {
-                console.log('resolve');
                 defer.resolve();
             }
-            data.users.forEach(function (user) {
-                console.log('user');
-                _this.emit('user', user);
-            });
+            cb(data);
         }
     });
     return defer.promise;
 };
 
+TwitterAPI.prototype.fetchLists = function () {
+    var _this = this;
+    return this.fetchFromCursor('/lists/ownerships.json', function (data) {
+        data.lists.forEach(function (list) {
+            var user = list.user;
+            _this.emit('list', list);
+            _this.emit('user', user);
+        });
+    });
+};
+
+TwitterAPI.prototype.fetchFriends = function () {
+    var _this = this;
+    return this.fetchFromCursor('/friends/list.json', function (data) {
+        data.users.forEach(function (user) {
+            console.log('user', user.id_str);
+            _this.emit('user', user);
+        });
+    });
+};
 
 TwitterAPI.prototype.getFriendsList = function (cursor) {
     var defer = Q.defer();

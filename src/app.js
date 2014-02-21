@@ -7,82 +7,77 @@ var Plugme = require('plugme').Plugme;
 var Q = require('q');
 var express = require('express');
 var twitter = require('twitter');
-var MongoClient = require('mongodb').MongoClient;
+var mysql = require('mysql');
 
+var ListMysqlRepository = require('./ListMysqlRepository');
 var TwitterAPI = require('./twitterapi');
 
 var plug = new Plugme();
 
 plug.set('twit', new twitter(require('../twitter-tokens.json')));
 
-plug.set('mongodb', function (done) {
-    MongoClient.connect('mongodb://localhost:27017/twilist', function (err, db) {
-        if (err) {
-            throw err;
-        }
-        done(db);
+plug.set('my', function () {
+    var connection = mysql.createConnection({
+        host: 'localhost',
+        user: 'twilist',
+        password: 'twilist',
+        database: 'twilist'
     });
+    connection.connect();
+    return connection;
+});
+
+plug.set('listrepo', ['my'], function (my) {
+    return new ListMysqlRepository(my);
 });
 
 plug.set('twitapi', ['twit'], function (twit) {
     return new TwitterAPI(twit);
 });
 
-plug.set('listdb', ['mongodb'], function (mongodb) {
-    return mongodb.collection('lists');
-});
-
-plug.set('userdb', ['mongodb'], function (mongodb) {
-    return mongodb.collection('users');
-});
-
-plug.set('twitFetch', ['twitapi', 'listdb', 'userdb'], function (twitapi, listdb, userdb) {
+plug.set('twitFetch', ['twitapi', 'listrepo'], function (twitapi, listrepo) {
     twitapi.on('list', function (list) {
-        var _id = list.id_str;
-        list.user = list.user.id_str;
         list.created_at = new Date(list.created_at);
-        delete list.id;
-        delete list.id_str;
-
-        listdb.update({_id: _id}, {$set: list}, {w: 1, upsert: true}, function (err) {
-            if (err) {
-                console.log(err);
-            }
-        });
+        listrepo.save(list);
     });
     twitapi.on('user', function (user) {
-        console.log('user ok');
-        var _id = user.id_str;
         user.created_at = new Date(user.created_at);
-        delete user.id;
-        delete user.id_str;
-
-        userdb.update({_id: _id}, {$set: user}, {w: 1, upsert: true}, function (err) {
-            if (err) {
-                console.log(err);
-            }
-        });
     });
     return null;
 });
 
 plug.set('server', [
     'twitapi',
-    'twitFetch'
+    'twitFetch',
+    'listrepo'
 ], function (
     twitapi,
-    twitFetch
+    twitFetch,
+    listrepo
 ) {
     var server = express();
     server.use('/', express.static(path.join(__dirname, '..', 'public')));
     server.use(express.bodyParser());
 
     server.get('/fetch', function (req, res) {
-        Q.all([/*twitapi.fetchLists(), */twitapi.fetchFriends()]).then(function () {
+        Q.all([twitapi.fetchLists()/*, twitapi.fetchFriends()*/])
+        .then(function () {
             res.send('ok');
         }).catch(function (err) {
             res.send(500, err);
         });
+    });
+
+    server.get('/lists', function (req, res) {
+        listrepo.findAll().then(function (lists) {
+            res.json(lists);
+        }, function (err) {
+            res.send
+        });
+    });
+
+    server.get('/friends', function (req, res) {
+
     });
 
     /*
